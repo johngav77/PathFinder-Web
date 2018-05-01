@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
+    <meta charset="utf-8">
+    <title>PathFinder</title>
+    <style>
+      #map {
+        height: 100%;
+      }
+      
+      html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+      }
+	  
+	  #floating-panel {
+        position: absolute;
+        top: 10px;
+        left: 25%;
+        z-index: 5;
+        background-color: #fff;
+        padding: 5px;
+        border: 1px solid #999;
+        text-align: center;
+        font-family: 'Roboto','sans-serif';
+        line-height: 30px;
+        padding-left: 10px;
+      }
+    </style>
+  </head>
+  
+  <body>
+  <div id="floating-panel">
+      <input onclick="removeLine();" type=button value="Remove line">
+      <input onclick="loadLine();"  type=button value="Load line">
+	  <input onclick="reloadMap();" type=button value="Initialize map">
+	  <input onclick="endOfPath();" type=button value="End of path">
+    </div>
+    <div id="map"></div>
+	
+<script src="https://www.gstatic.com/firebasejs/4.8.0/firebase.js"></script>
+<script src="https://www.gstatic.com/firebasejs/4.8.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/4.8.0/firebase-database.js"></script>
+
+<script>
+	// Αρχικοποίηση βάσης δεδομένων
+	var config = {
+		apiKey: "AIzaSyC1NjA05bcRWp-VSPebS64yQT7UMQ9VnjY",
+		authDomain: "sdy60-ge2-d.firebaseapp.com",
+		databaseURL: "https://sdy60-ge2-d.firebaseio.com",
+		projectId: "sdy60-ge2-d",
+		storageBucket: "sdy60-ge2-d.appspot.com",
+		messagingSenderId: "818514612891"
+	};
+	firebase.initializeApp(config);
+</script>
+	
+<script>
+    var poly;
+    var map, infoWindow;
+	var path, distance;
+	  
+      function initMap() {
+        map = new google.maps.Map(document.getElementById('map'), {
+          zoom: 18,
+          center: {lat : 38.249578, lng: 21.733985},
+		  mapTypeId: google.maps.MapTypeId.HYBRID,
+		  
+		  streetViewControl: true,
+			streetViewControlOptions: {
+				position: google.maps.ControlPosition.TOP_RIGHT
+			}
+        }
+		
+		);
+		
+		if (navigator.geolocation) {
+         navigator.geolocation.getCurrentPosition(function (position) {
+             initialLocation = new google.maps.LatLng(position.coords.latitude, position.coords.longitude);
+			 map.setCenter(initialLocation);
+             
+         });
+		 }else{infoWindow.setContent('No geolocation available'); infoWindow.open(map);}
+		 
+
+          poly = new google.maps.Polyline({
+          strokeColor: '#ff5151',
+          strokeOpacity: 1.0,
+          strokeWeight: 3,
+		  geodesic : true
+        });
+		poly.setMap(map);
+
+		map.addListener('click', addLatLng);
+      }
+
+      // Με κάθε κλικ ένα σημείο προστίθεται στην Polyline και ενώνεται με το προηγούμενο
+      function addLatLng(event) {
+        path = poly.getPath();
+
+        // Το path είναι ένα MVCArray, το οποίο 
+		// ανανεώνεται κάθε φορά που προστίθεται ένα σημείο.
+        path.push(event.latLng);
+		
+		// αποθήκευση των σημείων της polyline στη firebase 
+		 var pointdata = {
+			lat: null,
+			lng: null 
+		}
+			
+		pointdata.lat = event.latLng.lat();
+		pointdata.lng = event.latLng.lng(); 
+		
+		var ref = firebase.database().ref();
+		ref.child('pointdata').push(pointdata);
+		
+		var marker = new google.maps.Marker({
+			position: event.latLng,
+			map: map
+		});
+		//map.panTo(position);
+		
+		//ref.child('pointdata').child('lat').push(pointdata.lat);
+		//ref.child('pointdata/lng').child('lng').push(pointdata.lng);
+	}  
+	 
+	 // αφαίρεση polyline από το χάρτη και των αντιστοίχων σημείων από τη βάση
+	 function removeLine() {
+        poly.setMap(null);
+		initMap();
+		var ref = firebase.database().ref();
+		
+		ref.child('pointdata').remove();
+      }
+	  
+	  function loadLine(){ 
+		//alert('loadline');
+		var fpCoords = [];
+		
+           firebase.database().ref('pointdata').once('value', snapshot => {
+           snapshot.forEach(point=>{
+				console.log(point.val().lat, point.val().lng);
+		        fpCoords.push([point.val().lat, point.val().lng]);})
+           }) 
+		   
+		   //console.log(fpCoords); 
+		   
+		   var  linePath = [];
+		   for (var i=0; i < fpCoords.length; i++){
+				var tempLatLng = new google.maps.LatLng(fpCoords[i][0], fpCoords[i][1]);
+				linePath.push(tempLatLng);
+				
+	        } 
+			//console.log(linePath);
+			
+			var lineOptions = {
+			path: linePath,
+			strokeWeight: 7,
+			strokeColor: '#FF0000',
+			strokeOpacity: 0.8
+		}
+		var newPoly = new google.maps.Polyline(lineOptions);
+		newPoly.setMap(map); 
+		}
+		
+		function reloadMap()
+		{
+			initMap();
+		}
+		
+		function endOfPath()
+		{
+			distance = Math.round(google.maps.geometry.spherical.computeLength(path.getArray()));
+			var dist = distance.toString();
+			alert('Διανύσατε ' + dist + ' μετρα.\nΚερδίσατε αντίστοιχους πόντους');
+			//alert(distance);
+		    prompt("Πώς βαθμολογείτε το μονοπάτι ως προς τη δυσκολία για ΠΕΖΟΥΣ; \n\n (πληκτρολογήστε τον αντίστοιχο αριθμό \n\n 1. Εύκολο \n 2.Προσβάσιμο\n 3.Μέτριο \n 4.Δύσκολο \n 5.Επικίνδυνο "," ");
+			prompt("Πώς βαθμολογείτε το μονοπάτι ως προς τη δυσκολία για ΚΑΡΟΤΣΑΚΙΑ; \n\n (πληκτρολογήστε τον αντίστοιχο αριθμό \n\n 1. Εύκολο \n 2.Προσβάσιμο\n 3.Μέτριο \n 4.Δύσκολο \n 5.Επικίνδυνο "," ");
+			distance = 0;
+		}
+		
+		initMap();
+    </script>
+	
+    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCeqFq5BBs9Avh3Z4z51w966uqW2SvjwQQ&libraries=geometry&callback=initMap"></script>
+	
+  </body>
+</html>
